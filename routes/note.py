@@ -1,49 +1,8 @@
-# from fastapi import APIRouter, Request, Form
-# from fastapi.responses import HTMLResponse
-# from fastapi.templating import Jinja2Templates
-# from model.note import Note
-# from configuration.db import conn
-# from schemas.note import noteEntity, notesEntity 
-
-# note = APIRouter()
-# templates = Jinja2Templates(directory="templates")
-# @note.get("/", response_class=HTMLResponse)
-# async def read_item(request: Request):
-#     docs = conn.notes.notes.find()  # ✅ find_one → find
-#     newDoc = []
-#     for doc in docs:
-#         newDoc.append({
-#             "id": str(doc["_id"]),
-#             "title": doc["title"],
-#             "desc": doc["desc"],
-#             "important": doc.get("important", False)
-#         })
-#     return templates.TemplateResponse("index.html", {"request": request, "newDoc": newDoc})
-# @note.post("/")
-# async def create_note(
-#     title: str = Form(...),
-#     desc: str = Form(...),
-#     important: bool = Form(False)
-# ):
-#     new_note = {"title": title, "desc": desc, "important": important}
-#     inserted_note = conn.notes.notes.insert_one(new_note)
-#     return {"id": str(inserted_note.inserted_id)}
-
-
-
-# # @note.post("/")
-# # async def create_note(
-# #     title: str = Form(...),
-# #     description: str = Form(...)
-# # ):
-# #     # ✅ create a dictionary from form fields
-# #     new_note = {"title": title, "description": description}
-# #     inserted_note = conn.notes.notes.insert_one(new_note)
-# #     return {"id": str(inserted_note.inserted_id)}
-from configuration.db import db, collection  # 🎯 Import collection
+from configuration.db import db, collection  # 🎯 MongoDB collection
 from fastapi import APIRouter, Request, Form
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from bson.objectid import ObjectId  # 🔑 for MongoDB _id
 
 note = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -52,9 +11,9 @@ templates = Jinja2Templates(directory="templates")
 @note.get("/", response_class=HTMLResponse)
 async def read_item(request: Request):
     try:
+        newDoc = []
         if collection is not None:
             docs = collection.find()
-            newDoc = []
             for doc in docs:
                 newDoc.append({
                     "id": str(doc["_id"]),
@@ -62,12 +21,10 @@ async def read_item(request: Request):
                     "desc": doc.get("desc", ""),
                     "important": doc.get("important", False)
                 })
-            return templates.TemplateResponse("index.html", {"request": request, "newDoc": newDoc})
+        return templates.TemplateResponse("index.html", {"request": request, "newDoc": newDoc})
     except Exception as e:
         print(f"❌ Error reading data: {e}")
-    
-    return templates.TemplateResponse("index.html", {"request": request, "newDoc": []})
-
+        return templates.TemplateResponse("index.html", {"request": request, "newDoc": []})
 
 # ✅ CREATE NOTE
 @note.post("/", response_class=HTMLResponse)
@@ -78,18 +35,43 @@ async def create_note(
     important: bool = Form(False)
 ):
     try:
-        # 🔍 Debug print: Check MongoDB collection reference
-        print(f"🧠 Collection reference: {collection}")
-
         if collection is not None:
             new_note = {"title": title, "desc": desc, "important": important}
             result = collection.insert_one(new_note)
-            print(f"✅ Data saved to MongoDB with ID: {result.inserted_id}")
-        else:
-            print(f"⚠️ Collection is None — data not saved")
-
+            print(f"✅ Data saved with ID: {result.inserted_id}")
     except Exception as e:
         print(f"❌ Error saving data: {e}")
+    return RedirectResponse(url="/", status_code=303)
 
-    # 🔁 Redirect back to homepage
+# ✅ DELETE NOTE
+@note.get("/delete/{note_id}", response_class=RedirectResponse)
+async def delete_note(note_id: str):
+    try:
+        if collection is not None:
+            result = collection.delete_one({"_id": ObjectId(note_id)})
+            if result.deleted_count:
+                print(f"✅ Note with ID {note_id} deleted")
+    except Exception as e:
+        print(f"❌ Error deleting note: {e}")
+    return RedirectResponse(url="/", status_code=303)
+
+# ✅ UPDATE NOTE
+@note.post("/update/{note_id}", response_class=RedirectResponse)
+async def update_note(
+    request: Request,
+    note_id: str,
+    title: str = Form(...),
+    desc: str = Form(...),
+    important: bool = Form(False)
+):
+    try:
+        if collection is not None:
+            result = collection.update_one(
+                {"_id": ObjectId(note_id)},
+                {"$set": {"title": title, "desc": desc, "important": important}}
+            )
+            if result.modified_count:
+                print(f"✅ Note with ID {note_id} updated")
+    except Exception as e:
+        print(f"❌ Error updating note: {e}")
     return RedirectResponse(url="/", status_code=303)
